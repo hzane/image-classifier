@@ -131,3 +131,5 @@ whats/
 *.tar
 whats.art/
 *.train/
+.idea/
+lightning_logs/
