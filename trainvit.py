@@ -11,8 +11,10 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+import torchmetrics as tm
 import pytorch_lightning as pl
 import hydra
+import omegaconf as oc
 
 from torch.optim import SGD, lr_scheduler, Adam
 from torch.utils.data import DataLoader
@@ -22,14 +24,31 @@ from hydra.utils import to_absolute_path as hydra_to_absolute_path
 
 from vit_pytorch.efficient import ViT
 from linformer import Linformer
+from typing import Any
 
 from pathlib import Path
 # %%
 
 
 @dataclass
+class EarlyStoppingConf:
+    _target_: str = "pytorch_lightning.callbacks.EarlyStopping"
+    monitor: str = "early_stop_on"
+    min_delta: float = 0.0
+    patience: int = 3
+    verbose: bool = False
+    mode: str = "auto"
+    strict: bool = True
+
+
+@dataclass
 class TrainerConf:
-    pass
+    gpus: Any = 1
+    check_val_every_n_epoch: int = 1
+    min_epochs: int = 1
+    log_every_n_steps: int = 10
+    resume_from_checkpoint: Any = None
+    fast_dev_run: Any = False
 
 
 @dataclass
@@ -63,6 +82,7 @@ class XArtsModule(pl.LightningModule):
         self.save_hyperparameters(conf)
         self.criterion = nn.CrossEntropyLoss()
         self.model = self.configure_model()
+        self.train_accuracy = tm.Accuracy()
 
     def forward(self, x):
         y = self.model(x)
@@ -71,9 +91,11 @@ class XArtsModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         yhat = self(x)
+        self.train_accuracy(yhat, y)
         loss = self.criterion(yhat, y)
-        # preds = yhat.argmax(1)
 
+        self.log('loss/train', loss)
+        self.log('accuracy/train', self.train_accuracy)
         return loss
 
     def configure_optimizers(self):
@@ -135,7 +157,22 @@ class XArtsDataModule(pl.LightningDataModule):
 @hydra.main(config_path = None, config_name = 'config')
 def xarts_cli(conf: XArtsConfig) -> None:
     pl.seed_everything(conf.seed)
-    trainer = pl.Trainer(gpus = 1)
+    print(oc.OmegaConf.to_yaml(conf))
+
+    mc = pl.callbacks.ModelCheckpoint(
+        monitor='loss/train',
+        auto_insert_metric_name = False,
+        filename = 'e{epoch}-t{loss/train:.05f}'
+    )
+
+    en = conf.trainer.fast_dev_run and 1 or conf.trainer.log_every_n_steps
+    trainer = pl.Trainer(
+        gpus = conf.trainer.gpus,
+        fast_dev_run = conf.trainer.fast_dev_run,
+        log_every_n_steps = en,
+        resume_from_checkpoint = conf.trainer.resume_from_checkpoint,
+        callbacks = [mc],
+    )
     module = XArtsModule(conf)
     data = XArtsDataModule(
         conf.scheme + '.train',
@@ -144,6 +181,7 @@ def xarts_cli(conf: XArtsConfig) -> None:
     )
 
     trainer.fit(module, data)
+    print(mc.best_model_path)
 
 
 if __name__ == '__main__':
