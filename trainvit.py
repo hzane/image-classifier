@@ -72,7 +72,7 @@ class XArtsConfig:
     batch_size: int = 64
     lr: float = 3e-5
     force_save: bool = False
-    num_classes: int = 9
+    num_classes: int = -1
 
 
 class XArtsModule(pl.LightningModule):
@@ -147,6 +147,8 @@ class XArtsDataModule(pl.LightningDataModule):
 def xarts_cli(conf: XArtsConfig) -> None:
     pl.seed_everything(conf.seed)
     print(oc.OmegaConf.to_yaml(conf))
+    if conf.num_classes < 0:
+        conf.num_classes = len(list(Path(conf.scheme + '.train').iterdir()))
 
     mc = pl.callbacks.ModelCheckpoint(
         monitor='loss/train',
