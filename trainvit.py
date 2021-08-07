@@ -12,6 +12,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torchmetrics as tm
+import timm
 import pytorch_lightning as pl
 import hydra
 import omegaconf as oc
@@ -22,8 +23,6 @@ from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from hydra.utils import to_absolute_path as hydra_to_absolute_path
 
-from vit_pytorch.efficient import ViT
-from linformer import Linformer
 from typing import Any
 
 from pathlib import Path
@@ -53,7 +52,7 @@ class TrainerConf:
 
 @dataclass
 class ModelConf:
-    pass
+    vit_name: str = 'vit_tiny_patch16_224'
 
 
 @dataclass
@@ -68,9 +67,9 @@ class XArtsConfig:
     data: DataConf = DataConf()
     seed: int = 210820
     scheme: str = 'xart3'
-    epochs: int = 10
+    epochs: int = 5
     num_workers: int = 4
-    batch_size: int = 128
+    batch_size: int = 64
     lr: float = 3e-5
     force_save: bool = False
     num_classes: int = 9
@@ -95,7 +94,7 @@ class XArtsModule(pl.LightningModule):
         loss = self.criterion(yhat, y)
 
         self.log('loss/train', loss)
-        self.log('accuracy/train', self.train_accuracy)
+        self.log('accuracy/train', self.train_accuracy, prog_bar = True)
         return loss
 
     def configure_optimizers(self):
@@ -103,22 +102,12 @@ class XArtsModule(pl.LightningModule):
         return optimizer
 
     def configure_model(self, ):
-        efficient_transformer = Linformer(
-            dim = 256,
-            seq_len = 49 + 1,
-            depth = 12,
-            heads = 8,
-            k = 64,
+        model = timm.create_model(
+            self.hparams.model.vit_name,
+            pretrained = True,
+            num_classes = self.hparams.num_classes,
         )
 
-        model = ViT(
-            dim = 256,
-            image_size = 224,
-            patch_size = 32,
-            num_classes = self.hparams.num_classes,
-            transformer = efficient_transformer,
-            channels = 3,
-        )
         return model
 
 
@@ -165,13 +154,21 @@ def xarts_cli(conf: XArtsConfig) -> None:
         filename = 'e{epoch}-t{loss/train:.05f}'
     )
 
+    es = pl.callbacks.early_stopping.EarlyStopping(
+        monitor='accuracy/train',
+        min_delta = 0.0,
+        patience = 10,
+        mode = 'max',
+    )
+
     en = conf.trainer.fast_dev_run and 1 or conf.trainer.log_every_n_steps
     trainer = pl.Trainer(
         gpus = conf.trainer.gpus,
+        max_epochs = conf.num_epochs,
         fast_dev_run = conf.trainer.fast_dev_run,
         log_every_n_steps = en,
         resume_from_checkpoint = conf.trainer.resume_from_checkpoint,
-        callbacks = [mc],
+        callbacks = [mc, es],
     )
     module = XArtsModule(conf)
     data = XArtsDataModule(
