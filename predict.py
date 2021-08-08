@@ -4,40 +4,45 @@ from pathlib import Path
 from typing import Generator, Union
 
 import torch
-import torch.nn as nn
-from fire import Fire
+import hydra
+import pytorch_lightning as pl
+import omegaconf as oc
+
+from hydra.utils import to_absolute_path as hydra_to_absolute_path
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.models import resnet34
+from torchvision.datasets.folder import find_classes
 from tqdm import tqdm
-from trainvit import Checkpoint
-from vit_pytorch.efficient import ViT
-from linformer import Linformer
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+from typing import Optional
+
+from dataclasses import dataclass
+from omegaconf import MISSING
+from trainvit import (
+    XartsModule,
+)
 
 
 def iter_images(root: Union[str, Path]) -> Generator[Path, None, None]:
-    for p in Path(root).rglob("*.jpg"):
-        yield p
-    for p in Path(root).rglob("*.png"):
-        yield p
-
-
+    for pth in Path(root).rglob('*'):
+        if pth.suffix in {'.jpg', '.jpeg', '.png'}:
+            yield pth
 # %%
 
 
 class ImageFolder(Dataset):
     def __init__(self, root: Union[str, Path], transform = None):
         self.transform = transform
-        self.root = root
+        self.root = hydra_to_absolute_path(root)
         self.image_paths = list(iter_images(root))
+        mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
         if transform is None:
             self.transform = transforms.Compose([
                 transforms.Resize((224, 224)),
                 transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                transforms.Normalize(mean, std),
             ])
 
     def __len__(self):
@@ -51,54 +56,6 @@ class ImageFolder(Dataset):
             img = torch.randn(3, 224, 224)
             print(e)
         return img, str(self.image_paths[idx])
-
-
-def load_model(checkpoint):
-    if not checkpoint.endswith('.tar'):
-        checkpoint += '.vit.tar'
-
-    if not Path(checkpoint).exists():
-        checkpoint = Path(__file__).resolve().parent / checkpoint
-
-    cp = torch.load(checkpoint)
-
-    efficient_transformer = Linformer(
-        dim = 256,
-        seq_len = 49 + 1,
-        depth = 12,
-        heads = 8,
-        k = 64,
-    )
-
-    model = ViT(
-        dim = 256,
-        image_size = 224,
-        patch_size = 32,
-        num_classes = len(cp.classes),
-        transformer = efficient_transformer,
-        channels = 3,
-    ).cuda()
-
-    model.load_state_dict(cp.model_weights)
-    classes = cp.classes
-
-    return model, classes
-
-
-def predict(model, dataloader):
-    model.eval()
-
-    files, preds = [], []
-    for x, fn in tqdm(dataloader):
-        x = x.to(device)
-        output = model(x)  # (batch_size, 2)
-        pred = torch.argmax(output, 1)
-        files += [f for f in fn]
-        preds += [p.item() for p in pred]
-
-    return list(zip(files, preds))
-
-
 # %%
 
 
@@ -123,58 +80,78 @@ def clean_images(root: str):
 
 # %%
 def predict_dir(
-        model,
-        classes,
-        root: str,
-        target: str,
-        num_workers ,
-        batch_size ,
-        clean: bool = False,
+    trainer,
+    model,
+    classes,
+    dataloader,
+    target: str,
 ):
-    if clean:
-        clean_images(root)
-
-    if target is None:
-        target = root
-
-    data = ImageFolder(root)
-    print(f'{root} has {len(data)} images')
-    if len(data) == 0:
-        return
-
-    dataloader = DataLoader(
-        data,
-        shuffle = False,
-        batch_size = batch_size,
-        num_workers = num_workers,
-    )
-    with torch.no_grad():
-        result = predict(model, dataloader)
+    result = trainer.predict(model, dataloader)
 
     for x in classes:
-        Path(target, x).mkdir(0o755, parents=True, exist_ok = True)
+        Path(target, x).mkdir(0o755, parents = True, exist_ok = True)
 
-    for fn, label in result:
-        print(fn, classes[label])
-        t = Path(target, classes[label], Path(fn).name)
-        Path(fn).rename(t)
+    for labels, names in result:
+        for label, name in zip(labels, names):
+            t = Path(target, classes[label.item()], Path(name).name)
+            print(str(t))
+            Path(name).rename(t)
 
 
-def predict_dirs(
-        root: str,
-        clean: bool = False,
-        target: str = None,
-        scheme: str = None,
-        num_workers: int = 2,
-        batch_size: int = 100,
-):
-    assert scheme is not None
-    model, classes = load_model(scheme)
+@dataclass
+class XartsPredictConfig:
+    data_dir: str = MISSING
+    scheme: str = 'xart3'
+    target_dir: Optional[str] = None
+    classes_dir: Optional[str] = None
+    clean: bool = False
+    batch_size: int = 4
+    num_workers: int = 4
+    gpus: int = 1
 
-    predict_dir(model, classes, root, target, num_workers, batch_size, clean)
+
+@hydra.main(config_path = None, config_name = 'predict')
+def predict_cli(conf: XartsPredictConfig) -> None:
+    if conf.target_dir is None:
+        conf.target_dir = hydra_to_absolute_path(conf.data_dir)
+
+    if conf.clean:
+        clean_images(conf.target_dir)
+
+    if conf.classes_dir is None:
+        conf.classes_dir = conf.scheme + '.train'
+
+    classes, _ = find_classes(hydra_to_absolute_path(conf.classes_dir))
+
+    model_ckpt = hydra_to_absolute_path(conf.scheme + '.cpkt')
+    model = XartsModule.load_from_checkpoint(model_ckpt)
+    model.freeze()
+
+    data = ImageFolder(hydra_to_absolute_path(conf.data_dir))
+    dataloader = DataLoader(
+        data,
+        batch_size = conf.batch_size,
+        num_workers = conf.num_workers,
+        shuffle = False,
+    )
+
+    trainer = pl.Trainer(
+        gpus = conf.gpus,
+    )
+
+    predict_dir(
+        trainer,
+        model,
+        classes,
+        dataloader,
+        conf.target_dir,
+    )
 
 
 # %%
 # python predict.py --scheme=selfshot --root=test --target=. --clean=0
 if __name__ == '__main__':
-    Fire(predict_dirs)
+    cs = hydra.core.config_store.ConfigStore.instance()
+    cs.store(name = 'predict', node = XartsPredictConfig)
+
+    predict_cli()
