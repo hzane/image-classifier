@@ -16,6 +16,7 @@ import timm
 import pytorch_lightning as pl
 import hydra
 import omegaconf as oc
+import shutil
 
 from torch.optim import SGD, lr_scheduler, Adam
 from torch.utils.data import DataLoader
@@ -53,6 +54,8 @@ class TrainerConf:
 @dataclass
 class ModelConf:
     vit_name: str = 'vit_tiny_patch16_224'
+    num_classes: int = -1
+    lr: float = 1.e-5
 
 
 @dataclass
@@ -70,15 +73,12 @@ class XartsConfig:
     num_epochs: int = 5
     num_workers: int = 4
     batch_size: int = 64
-    lr: float = 3e-5
-    force_save: bool = False
-    num_classes: int = -1
 
 
 class XartsModule(pl.LightningModule):
-    def __init__(self, conf: XartsConfig):
+    def __init__(self, num_classes: int, vit_name: str = '', lr: float = 1.e-5):
         super().__init__()
-        self.save_hyperparameters(conf)
+        self.save_hyperparameters()
         self.criterion = nn.CrossEntropyLoss()
         self.model = self.configure_model()
         self.train_accuracy = tm.Accuracy()
@@ -103,7 +103,7 @@ class XartsModule(pl.LightningModule):
 
     def configure_model(self, ):
         model = timm.create_model(
-            self.hparams.model.vit_name,
+            self.hparams.vit_name,
             pretrained = True,
             num_classes = self.hparams.num_classes,
         )
@@ -113,7 +113,7 @@ class XartsModule(pl.LightningModule):
     def predict_step(self, batch, batch_idx: int, dataloader_idx: int = None):
         x, names = batch
         yhat = self(x)
-        return yhat.argmax(1).item(), names
+        return yhat.argmax(1), list(names)
 
 
 # %%
@@ -182,9 +182,10 @@ class XartsDataModule(pl.LightningDataModule):
 def xarts_cli(conf: XartsConfig) -> None:
     pl.seed_everything(conf.seed)
     print(oc.OmegaConf.to_yaml(conf))
-    if conf.num_classes < 0:
+
+    if conf.model.num_classes < 0:
         datadir = hydra_to_absolute_path(conf.scheme + '.train')
-        conf.num_classes = len(list(Path(datadir).iterdir()))
+        conf.model.num_classes = len(list(Path(datadir).iterdir()))
 
     mc = pl.callbacks.ModelCheckpoint(
         monitor='loss/train',
@@ -208,7 +209,11 @@ def xarts_cli(conf: XartsConfig) -> None:
         resume_from_checkpoint = conf.trainer.resume_from_checkpoint,
         callbacks = [mc, es],
     )
-    module = XartsModule(conf)
+    module = XartsModule(
+        conf.model.num_classes,
+        vit_name = conf.model.vit_name,
+        lr = conf.model.lr,
+    )
     data = XartsDataModule(
         conf.scheme + '.train',
         conf.batch_size,
@@ -216,12 +221,12 @@ def xarts_cli(conf: XartsConfig) -> None:
     )
 
     trainer.fit(module, data)
-    print(mc.best_model_path)
+    shutil.copy(mc.best_model_path, hydra_to_absolute_path(conf.scheme + '.cpkt'),)
 
 
 if __name__ == '__main__':
     '''
-    python train.py --scheme=jigsaw
+    python train.py hydra.run.dir=results num_epochs=5
     '''
     cs = hydra.core.config_store.ConfigStore.instance()
     cs.store(name = 'config', node = XartsConfig)
