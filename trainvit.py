@@ -61,13 +61,13 @@ class DataConf:
 
 
 @dataclass
-class XArtsConfig:
+class XartsConfig:
     trainer: TrainerConf = TrainerConf()
     model: ModelConf = ModelConf()
     data: DataConf = DataConf()
     seed: int = 210820
     scheme: str = 'xart3'
-    epochs: int = 5
+    num_epochs: int = 5
     num_workers: int = 4
     batch_size: int = 64
     lr: float = 3e-5
@@ -75,8 +75,8 @@ class XArtsConfig:
     num_classes: int = -1
 
 
-class XArtsModule(pl.LightningModule):
-    def __init__(self, conf: XArtsConfig):
+class XartsModule(pl.LightningModule):
+    def __init__(self, conf: XartsConfig):
         super().__init__()
         self.save_hyperparameters(conf)
         self.criterion = nn.CrossEntropyLoss()
@@ -110,11 +110,16 @@ class XArtsModule(pl.LightningModule):
 
         return model
 
+    def predict_step(self, batch, batch_idx: int, dataloader_idx: int = None):
+        x, names = batch
+        yhat = self(x)
+        return yhat.argmax(1).item(), names
+
 
 # %%
 
 
-class XArtsDataModule(pl.LightningDataModule):
+class XartsDataModule(pl.LightningDataModule):
     def __init__(self, data_dir: str, batch_size: int = 16, num_workers = 0):
         super().__init__()
         self.data_dir = hydra_to_absolute_path(data_dir)
@@ -123,12 +128,22 @@ class XArtsDataModule(pl.LightningDataModule):
         self.data = None
 
     def setup(self, stage: Optional[str] = None):
-        transes = transforms.Compose([
-            transforms.RandomHorizontalFlip(0.5),
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ])
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        if stage == 'fit' or stage is None:
+            transes = transforms.Compose([
+                transforms.RandomHorizontalFlip(0.5),
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ])
+        if stage in {'test', 'predict', 'validate'}:
+            transes = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ])
+
         self.data = ImageFolder(self.data_dir, transform = transes)
 
     def train_dataloader(self) -> DataLoader:
@@ -140,15 +155,36 @@ class XArtsDataModule(pl.LightningDataModule):
             num_workers = self.num_workers,
         )
         return dataloader
+
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.data,
+            shuffle = False,
+            batch_size = self.batch_size,
+            pin_memory = False,
+            num_workers = self.num_workers,
+        )
+
+    @staticmethod
+    def valid_transforms():
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        transes = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ])
+        return transes
 # %%
 
 
 @hydra.main(config_path = None, config_name = 'config')
-def xarts_cli(conf: XArtsConfig) -> None:
+def xarts_cli(conf: XartsConfig) -> None:
     pl.seed_everything(conf.seed)
     print(oc.OmegaConf.to_yaml(conf))
     if conf.num_classes < 0:
-        conf.num_classes = len(list(Path(conf.scheme + '.train').iterdir()))
+        datadir = hydra_to_absolute_path(conf.scheme + '.train')
+        conf.num_classes = len(list(Path(datadir).iterdir()))
 
     mc = pl.callbacks.ModelCheckpoint(
         monitor='loss/train',
@@ -172,8 +208,8 @@ def xarts_cli(conf: XArtsConfig) -> None:
         resume_from_checkpoint = conf.trainer.resume_from_checkpoint,
         callbacks = [mc, es],
     )
-    module = XArtsModule(conf)
-    data = XArtsDataModule(
+    module = XartsModule(conf)
+    data = XartsDataModule(
         conf.scheme + '.train',
         conf.batch_size,
         conf.num_workers,
@@ -188,6 +224,6 @@ if __name__ == '__main__':
     python train.py --scheme=jigsaw
     '''
     cs = hydra.core.config_store.ConfigStore.instance()
-    cs.store(name = 'config', node = XArtsConfig)
+    cs.store(name = 'config', node = XartsConfig)
 
     xarts_cli()
