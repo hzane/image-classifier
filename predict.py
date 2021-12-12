@@ -105,7 +105,7 @@ class XartsPredictConfig:
     target_dir: Optional[str] = None
     classes_dir: Optional[str] = None
     clean: bool = False
-    batch_size: int = 4
+    batch_size: int = 80
     num_workers: int = 4
     gpus: int = 1
 
@@ -121,9 +121,10 @@ def predict_cli(conf: XartsPredictConfig) -> None:
     if conf.classes_dir is None:
         conf.classes_dir = conf.scheme + '.train'
 
-    classes, _ = find_classes(hydra_to_absolute_path(conf.classes_dir))
-
-    model_ckpt = hydra_to_absolute_path(conf.scheme + '.cpkt')
+    classes_dir = Path(__file__).with_name(conf.scheme).with_suffix('.train')
+    classes, _ = find_classes(hydra_to_absolute_path(classes_dir))
+    model_ckpt = Path(__file__).with_name(conf.scheme).with_suffix('.cpkt')
+    # model_ckpt = hydra_to_absolute_path(conf.scheme + '.cpkt')
     model = XartsModule.load_from_checkpoint(model_ckpt)
     model.freeze()
 

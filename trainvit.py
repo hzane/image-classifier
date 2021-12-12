@@ -53,7 +53,8 @@ class TrainerConf:
 
 @dataclass
 class ModelConf:
-    vit_name: str = 'vit_tiny_patch16_224'
+    # vit_name: str = 'vit_tiny_patch16_224'
+    vit_name: str = 'convit_small'
     num_classes: int = -1
     lr: float = 1.e-5
 

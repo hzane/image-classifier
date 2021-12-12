@@ -135,3 +135,11 @@ whats.art/
 lightning_logs/
 results/
 outputs/
+*.ckpt
+*.train
+cartoon.txt
+catoonc.txt
+results/
+whats.r/
+*.ic/
+*.cpkt
