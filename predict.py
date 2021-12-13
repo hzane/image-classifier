@@ -9,8 +9,11 @@ from pathlib import Path
 from typing import Any, Optional
 import warnings
 warnings.filterwarnings(
-    action="ignore", message=".*Lightning couldn't infer the indices fetched for your dataloader.*"
+    action = "ignore",
+    message =
+    ".*Lightning couldn't infer the indices fetched for your dataloader.*",
 )
+
 
 class LitFacePredictCLI(LightningCLI):
     def add_arguments_to_parser(self, parser):
