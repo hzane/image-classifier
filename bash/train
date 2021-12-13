@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-ENV=${ENV:-pt2}
+ENV=${CONDA_DEFAULT_ENV:-pt2}
 
 if [ -z "$CONDA_DEFAULT_ENV" ]; then
     conda activate $ENV
