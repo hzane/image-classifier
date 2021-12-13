@@ -34,18 +34,23 @@ class LitCLI(LightningCLI):
         return super().instantiate_trainer(**kwargs)
 
     def save_best(self, ckpt: str) -> None:
-        root = Path(self._get(self.config, 'trainer.default_root_dir'))
-        if Path(ckpt).exists():
-            Path(root, 'best.ckpt').symlink_to(ckpt)
+        trainer = self._get(self.config, 'trainer', {})
+        root = trainer.get('default_root_dir', 'outputs')
+        if not root:
+            return
+        root, ckpt = Path(root), Path(ckpt)
+
+        if Path(ckpt).exists() and root.exists():
+            Path(root, 'best.ckpt').symlink_to(ckpt.relative_to(root))
 
 
 def main():
     checkpoint = ModelCheckpoint(
-            save_last = True,
-            filename = 'epoch-{epoch}-acc-{valid/acc:.4f}-step-{step}',
-            monitor = 'valid/acc',
-            mode = 'max', # min
-            auto_insert_metric_name = False,
+        save_last = True,
+        filename = 'epoch-{epoch}-acc-{valid/acc:.4f}-step-{step}',
+        monitor = 'valid/acc',
+        mode = 'max',  # min
+        auto_insert_metric_name = False,
     )
     callbacks = [
         # 全局 累计patience，所以最好是多个 lr-scheduler 的 patience
