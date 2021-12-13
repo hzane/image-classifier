@@ -1,2 +1,1 @@
-# image-classifier
-basic image classifier
+# Image Classifier

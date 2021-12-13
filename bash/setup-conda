@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Run from project folder with: ./bash/setup_conda.sh
+
+# check if conda is installed
+if ! command -v conda &> /dev/null
+then
+    echo "The 'conda' command could not be found. Exiting..."
+    exit
+fi
+
+# This line is needed for enabling conda env activation
+if [[ -z $CONDA_EXE ]]; then
+    CONDA_HOME=`conda info --base`
+    source $CONDA_HOME/etc/profile.d/conda.sh
+fi
+
+env_name=${CONDA_DEFAULT_ENV:-'pt2'}
+
+if [[ -z $CONDA_DEFAULT_ENV ]]; then
+  python_version=3.9
+  cuda_version=11.3.1
+
+  # Create conda env
+  conda create -y -n "$env_name" python="$python_version"
+  conda activate "$env_name"
+fi
+
+# Install pytorch
+
+conda install -y pytorch \
+    torchvision \
+    torchaudio \
+    torchtext \
+    cudatoolkit=$cuda_version \
+    -c pytorch -c conda-forge -n $env_name
+
+
+conda install ipykernel -n $env_name
+# python -m ipykernel install --user --name $env_name
+
+conda install --file requirements.txt \
+      -n $env_name \
+      -c conda-forge \
+      -c pytorch \
+      -c main
+
+
