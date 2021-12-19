@@ -4,7 +4,7 @@ from torchvision import transforms
 from PIL import Image as PILImage
 from accimage import Image as ACCImage
 
-from typing import Optional, Any, Tuple
+from typing import Optional, Any, Tuple, List
 from pathlib import Path
 
 
@@ -30,7 +30,7 @@ class PredictImageset(Dataset):
             self.files = [file_or_dir]
         else:
             self.files = [
-                str(fpath) for fpath in file_or_dir.glob("*.*")
+                str(fpath) for fpath in file_or_dir.rglob("*.*")
                 if fpath.suffix.lower() in {'.jpg', '.png', '.jpeg'}
             ]
 
@@ -148,3 +148,9 @@ class LitClasDataModule(LightningDataModule):
             pin_memory = False,
             shuffle = False,
         )
+
+    def read_labels(self)->List[str]:
+        # 0	high
+        lines = Path(self.data_dir, 'labels.tsv').read_text().splitlines()
+        labels = [line.split('\t')[1] for line in lines]
+        return labels
