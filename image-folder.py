@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-import pandas as pd
 from random import shuffle
 from pathlib import Path
 from fire import Fire
 
 
 def meta_from_path(path: Path, root: Path):
-    label = path.relative_to(root).parts[0]
+    path = path.relative_to(root)
+    label = path.parts[0]
     return str(path), label
 
 
