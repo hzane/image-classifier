@@ -10,28 +10,14 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from xclas import LitClasDataModule, LitClasModule
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class LitCLI(LightningCLI):
     def add_arguments_to_parser(self, parser):
-        # parser.add_argument(
-        #     '--experiment', type = str, default = 'baseline'
-        # )
         parser.set_defaults({
             'trainer.default_root_dir': 'outputs/baseline',
         })
-
-    def instantiate_trainerx(self, **kwargs: Any) -> Trainer:
-        cmd = self.config['subcommand']
-        if cmd in {'fit'}:
-            exp = self._get(self.config, 'experiment')
-            logger = TensorBoardLogger('logs', exp)
-
-            kwargs = {**kwargs, 'logger': logger}
-        else:
-            kwargs = {**kwargs, 'logger': False}
-        return super().instantiate_trainer(**kwargs)
 
     def save_best(self, ckpt: str) -> None:
         trainer = self._get(self.config, 'trainer', {})
