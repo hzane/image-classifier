@@ -9,7 +9,7 @@ from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
 from fire import Fire
-from typing import List, Union
+from typing import List, Union, Tuple
 
 
 def preprocess_image(
@@ -121,7 +121,7 @@ def download_file(url: str, to: Union[str, Path])->None:
         tmp.rename(to)
 
 
-def prepare_weight(model_name: str)->None:
+def prepare_weight(model_name: str) -> Tuple[str, List[str]]:
     root = Path.home() / '.NudeNet'
     url = 'https://github.com/notAI-tech/NudeNet/releases/download/v0'
 
@@ -132,15 +132,24 @@ def prepare_weight(model_name: str)->None:
     c = root / f'{model_name}_classes'
     curl = f'{url}/{c.name}'
     download_file(curl, c)
+    return str(w), c.read_text().splitlines()
 
 
-def prepare_weights()->None:
+def prepare_weights() -> Tuple[str, List[str]]:
     # prepare_weight('detector_v2_base')
-    prepare_weight('detector_v2_default')
+    return prepare_weight('detector_v2_default')
 
 
 def main(file_or_dir: str = None, out: str = None):
-    prepare_weights()
+    ckpt, classes = prepare_weights()
+    model = onnxruntime.InferenceSession(
+        ckpt,
+        providers = [
+            'CUDAExecutionProvider',
+            # 'TensorrtExecutionProvider',
+            'CPUExecutionProvider',
+        ]
+    )
 
     if file_or_dir is None:
         file_or_dir = 'whats.train/psed.a/3C49E51BF3B55D51B9582CE4735DDE3CDA0523C7-t.jpg'
@@ -159,11 +168,6 @@ def main(file_or_dir: str = None, out: str = None):
 
     out = Path(out).with_suffix('.json')
     out.parent.mkdir(parents = True, exist_ok = True)
-
-    ckpt = Path.home() / '.NudeNet/detector_v2_default_checkpoint.onnx'
-    model = onnxruntime.InferenceSession(str(ckpt))
-    classes = Path.home().joinpath('.NudeNet/classes'
-                                  ).read_text().splitlines()
 
     with out.open('w', encoding = 'utf-8') as out:
         for image_path in tqdm(images):
