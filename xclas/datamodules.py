@@ -1,7 +1,7 @@
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset, BatchSampler
 from torchvision import transforms
-from PIL import Image as PILImage
+from PIL import Image as PILImage, UnidentifiedImageError
 from accimage import Image as ACCImage
 
 from typing import Optional, Any, Tuple, List
@@ -12,7 +12,9 @@ def image_open(path: str) -> Any:
     try:
         return ACCImage(path)
     except IOError:
-        return PILImage.open(path).convert('RGB')
+        return PILImage.new('RGB', (224, 224), 255)
+        # return PILImage.open(path).convert('RGB')
+    # except UnidentifiedImageError:
 
 
 def line_split(line: str) -> Tuple[str, int]:

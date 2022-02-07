@@ -27,7 +27,10 @@ class LitCLI(LightningCLI):
         root, ckpt = Path(root), Path(ckpt)
 
         if Path(ckpt).exists() and root.exists():
-            Path(root, 'best.ckpt').symlink_to(ckpt.relative_to(root))
+            best= Path(root, 'best.ckpt')
+            # if best.exists():
+            best.unlink(missing_ok = True)
+            best.symlink_to(ckpt.relative_to(root))
 
 
 def main():

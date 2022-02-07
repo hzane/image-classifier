@@ -31,7 +31,10 @@ def read_image_bgr(path):
         path: Path to the image.
     """
     if isinstance(path, (str, Path)):
-        image = np.array(Image.open(path).convert("RGB"))
+        try:
+            image = np.array(Image.open(path).convert("RGB"))
+        except Exception:
+            image = np.zeros((100, 100, 3), dtype = np.uint8)
     else:
         path = cv2.cvtColor(path, cv2.COLOR_BGR2RGB)
         image = np.array(Image.fromarray(path))
@@ -75,6 +78,16 @@ def resize_image(img, min_side = 800, max_side = 1333):
     return img, scale
 
 
+def xyxy2xywh(x):
+    # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
+    y = np.copy(x)
+    y[0] = (x[0] + x[2]) / 2  # x center
+    y[1] = (x[1] + x[3]) / 2  # y center
+    y[2] = x[2] - x[0]  # width
+    y[3] = x[3] - x[1]  # heightx
+    return y
+
+
 def detect(model, classes, image_path, fast: bool = False) -> List[dict]:
     image, scale = preprocess_image(image_path)
     args_o = [s.name for s in model.get_outputs()]
@@ -86,17 +99,25 @@ def detect(model, classes, image_path, fast: bool = False) -> List[dict]:
     min_prob = 0.6
     boxes /= (image.shape[:2] * 2)
 
-    results = [
-        dict(
-            box = box.tolist(),
-            score = score.item(),
-            label = classes[label.item()],
-            path = str(image_path),
-        ) for box, score, label in zip(boxes, scores, labels)
+    # results = [
+    #     dict(
+    #         box = xyxy2xywh(box).tolist(),
+    #         score = score.item(),
+    #         label = classes[label.item()],
+    #         labelid = label.item(),
+    #         path = str(image_path),
+    #         imgsz = image.shape[:2],
+    #     ) for box, score, label in zip(boxes, scores, labels)
+    #     if score > min_prob
+    # ]
+    # _ = results
+    lines = [
+        f'{str(label.item())}  {" ".join([str(f) for f in xyxy2xywh(box)])}'
+        for box, score, label in zip(boxes, scores, labels)
         if score > min_prob
     ]
 
-    return results
+    return lines
 
 
 def download_file(url: str, to: Union[str, Path])->None:
@@ -151,8 +172,6 @@ def main(file_or_dir: str = None, out: str = None):
         ]
     )
 
-    if file_or_dir is None:
-        file_or_dir = 'whats.train/psed.a/3C49E51BF3B55D51B9582CE4735DDE3CDA0523C7-t.jpg'
     file_or_dir = Path(file_or_dir)
 
     if file_or_dir.is_file():
@@ -164,16 +183,23 @@ def main(file_or_dir: str = None, out: str = None):
         ]
 
     if not out:
-        out = file_or_dir.name
+        out = file_or_dir.parent
 
-    out = Path(out).with_suffix('.json')
-    out.parent.mkdir(parents = True, exist_ok = True)
+    for image_path in tqdm(images):
+        rpath = image_path.relative_to(out)
+        out_path = out / 'labels' / rpath.with_suffix('.txt')
+        if out_path.exists():
+            continue
+        out_path.parent.mkdir(parents = True, exist_ok = True)
 
-    with out.open('w', encoding = 'utf-8') as out:
-        for image_path in tqdm(images):
-            for r in detect(model, classes, image_path):
-                json.dump(r, out, ensure_ascii = False)
-                out.write('\n')
+        results = detect(model, classes, image_path)
+        out_path.write_text('\n'.join(results))
+
+    # {"box": xyxy
+    # [1.2085703611373901, 0.5202627778053284, 1.4289566278457642, 0.6306127309799194],
+    # "score": 0.6090637445449829,
+    # "label": "EXPOSED_FEET",
+    # "path": "xarts6.train/covers.a/d7764bd43d3b8ed3715c60d064dd30c47780c7b9-t.jpg"}
 
 
 if __name__ == '__main__':
