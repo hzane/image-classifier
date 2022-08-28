@@ -34,7 +34,7 @@ class LitFacePredictCLI(LightningCLI):
             return ckpt_path
 
         trainer = self._get(self.config, 'trainer', {})
-        root = trainer.get('default_root_dir', 'outputs/baseline')
+        root = trainer.get('default_root_dir', None)
 
         ckpt = Path(root, 'best.ckpt')
         if ckpt.exists():
@@ -80,6 +80,8 @@ def main():
     labels = datamodule.read_labels()
 
     dataset = datamodule.predictset
+    print(labels, len(dataset))
+
     files = dataset.files
     predictions = torch.cat(predictions).flatten()
 
