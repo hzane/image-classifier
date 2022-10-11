@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
-import torchmetrics.functional as M
 import timm
 from pytorch_lightning import LightningModule
+from torchmetrics import Accuracy
 
 from typing import Any
 
@@ -11,15 +11,16 @@ class LitClasModule(LightningModule):
     def __init__(
         self,
         num_classes: int,
-        backbone_name: str = 'convit_small',
+        backbone_name: str = 'resnet18',
         lr: float = 1.e-3,
-        scheduler_patience: int = 3,
+        scheduler_patience: int = 5,
         lr_reduce_factor: float = 0.33,
     ):
         super().__init__()
         self.save_hyperparameters()
         self.criterion = self.configure_criterion()
-        self.model = self.configure_model()
+        self.model = self.configure_model(backbone_name, num_classes)
+        self.accuracy = Accuracy(num_classes = num_classes)
 
     def configure_optimizers(self):
         hp = self.hparams
@@ -38,11 +39,11 @@ class LitClasModule(LightningModule):
             ),
         )
 
-    def configure_model(self, ):
+    def configure_model(self, backbone: str, num_classes: int):
         model = timm.create_model(
-            self.hparams.backbone_name,
+            backbone,
             pretrained = True,
-            num_classes = self.hparams.num_classes,
+            num_classes = num_classes,
         )
 
         return model
@@ -70,49 +71,29 @@ class LitClasModule(LightningModule):
         )
         return loss
 
-    def validation_step(self, batch: Any, batch_idx: int):
+    def test_step(self, batch, batch_idx):
         x, y = batch
         yhat = self(x)
         loss = self.criterion(yhat, y)
+        self.log('test/loss', loss)
 
-        return dict(loss = loss, yhat = yhat, y = y)
+    def validation_step(self, batch: Any, batch_idx: int):
+        x, y = batch
+        yhat = self(x)
+        self.accuracy.update(yhat ,y)
+        self.prec.update(yhat, y)
+        self.recall.update(yhat, y)
 
-    def validation_step_end(self, outputs):
-        # yhat, y 会被自动reduce 所以增加这个空函数
-        ...
-
-    def validation_epoch_end(self, step_returns):
-        if self.trainer.sanity_checking:
-            return
-        nc = self.hparams.num_classes
-
-        yhat, y, loss = zip(
-            *[(x['yhat'], x['y'], x['loss']) for x in step_returns]
-        )
-        yhat = torch.cat(yhat)
-        y = torch.cat(y)
-        loss = torch.cat(loss).mean()
-
-        auroc = M.auroc(yhat, y, num_classes = nc)
-        ap = M.average_precision(yhat, y, num_classes = nc)  # pr auc
-
-        prec, recall = M.precision_recall(yhat, y)
-        f1 = M.f1(yhat, y, num_classes = nc)
-        acc = M.accuracy(yhat, y, num_classes = nc)
-
+        loss = self.criterion(yhat, y)
         self.log_dict(
             {
-                'valid/auroc': auroc.item(),
-                'valid/loss': loss.item(),
-                'valid/F1': f1.item(),
-                'valid/acc': acc.item(),
+                'valid/acc': self.accuracy,
+                'valid/loss': loss
             },
+            on_step = False,
+            on_epoch = True,
             prog_bar = True,
         )
-        self.log_dict({
-            'valid/mAP': ap.item(),
-            'valid/prec': prec.item(),
-            'valid/recall': recall.item(),
-        },
-                      prog_bar = False)
-        self.log('hp_metric', acc.item())
+        return loss
+
+ 

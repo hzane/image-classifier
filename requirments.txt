@@ -1,6 +1,4 @@
 pytorch-lightning
-docstring_parser
 jsonargparse
-
-# yapf
-# tqdm
+wandb
+timm

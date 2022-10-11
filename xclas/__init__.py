@@ -1,6 +1,6 @@
 from .datamodules import (
-    LitClasDataModule,
-    ClasImageset,
-    PredictImageset,
+    FileDataset,
+    ImageDataset,
+    train_dataloader,valid_dataloader, predict_dataloader,
 )
 from .modules import LitClasModule

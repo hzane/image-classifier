@@ -1,33 +1,22 @@
 #!/usr/bin/env python
 
 import torch
-import _env as env
-from pytorch_lightning.utilities.cli import LightningCLI
+from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import (
-    EarlyStopping, LearningRateMonitor, ModelCheckpoint
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
 )
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
-from xclas import LitClasDataModule, LitClasModule
+from pytorch_lightning.loggers import WandbLogger
+from xclas import (
+    train_dataloader,
+    valid_dataloader,
+    LitClasModule,
+)
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-
-class LitCLI(LightningCLI):
-    def add_arguments_to_parser(self, parser):
-        parser.set_defaults({
-            'trainer.default_root_dir': 'outputs/baseline',
-        })
-
-    def save_best(self, ckpt: str) -> None:
-        trainer = self._get(self.config, 'trainer', {})
-        root = trainer.get('default_root_dir', 'outputs')
-        if not root:
-            return
-        root, ckpt = Path(root), Path(ckpt)
-
-        if Path(ckpt).exists() and root.exists():
-            Path(root, 'best.ckpt').symlink_to(ckpt.relative_to(root))
 
 
 def main():
@@ -44,19 +33,21 @@ def main():
         LearningRateMonitor(logging_interval = 'epoch'),
         checkpoint,
     ]
+    data_dir = 'datasets/cats12/data_sets/cat_12'
+    train_dl = train_dataloader(data_dir, 'train.txt', batch_size = 4)
+    valid_dl = valid_dataloader(data_dir, 'valid.txt', batch_size = 4)
 
-    cli = LitCLI(
-        LitClasModule,
-        LitClasDataModule,
-        trainer_defaults = dict(
-            gpus = 1,
-            callbacks = callbacks,
-        ),
-        parser_kwargs = dict(
-            fit = dict(default_config_files = ["configs/default.yaml"])
-        ),
+    model = LitClasModule(12)
+    trainer = Trainer(
+        # limit_train_batches = 100,
+        logger = WandbLogger(name='cat12-resnet18'),
+        max_epochs = 100,
+        callbacks = callbacks,
+        accelerator = 'gpu',
+        devices = 1,
     )
-    cli.save_best(checkpoint.best_model_path)
+    trainer.fit(model, train_dl, valid_dl)
+
 
 
 if __name__ == "__main__":

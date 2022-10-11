@@ -2,7 +2,6 @@
 
 from random import shuffle
 from pathlib import Path
-from fire import Fire
 
 
 def main(
@@ -17,9 +16,9 @@ def main(
     trainset = lines[:train_num]
     validset = lines[train_num:]
     Path(root, 'train.txt').write_text('\n'.join(trainset))
-    Path(root, 'valid.txt').write_text('\n'.join(validset))
-    ...
+    Path(root, 'valid.txt').write_text('\n'.join(validset))    
 
 
 if __name__ == '__main__':
-    Fire(main)
+    from jsonargparse import CLI
+    CLI(main)

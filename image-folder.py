@@ -2,7 +2,6 @@
 
 from random import shuffle
 from pathlib import Path
-from fire import Fire
 
 
 def meta_from_path(path: Path, root: Path):
@@ -13,13 +12,17 @@ def meta_from_path(path: Path, root: Path):
 
 def main(
     root: str = 'datasets/cats12/data_sets/cat_12',
-    train_ratio: float = 0.8
+    train_ratio: float = 0.8,
+    dataset_name: str = None
 ):
     root = Path(root)
+    if dataset_name is None:
+        dataset_name = root.stem
+        
     meta = [ meta_from_path(p, root) for p in Path(root).rglob('*.*') if p.suffix.lower() in ['.jpg', '.png', '.jpeg'] ]
 
     labels = sorted(set(label for _, label in meta))
-    Path(root, 'labels.tsv').write_text('\n'.join([f'{i}\t{l}' for i, l in enumerate(labels)]))
+    Path(root, f'{dataset_name}.classes').write_text('\n'.join(labels))
 
     labeldict = {l: i for i, l in enumerate(labels)}
     meta = [f'{fpath}\t{labeldict[label]}' for fpath, label in meta]
@@ -35,4 +38,5 @@ def main(
 
 
 if __name__ == '__main__':
-    Fire(main)
+    from jsonargparse import CLI
+    CLI(main)
