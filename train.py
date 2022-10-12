@@ -18,14 +18,14 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union, Tuple
 
 
-def resume_ckpt(resume:any, project:str, root: str)->Tuple[str, str]:
+def resume_ckpt(resume:str, project:str, root: str)->Tuple[str, str]:
     root = Path(root, project)
     ckpt = root.joinpath(resume or '', 'checkpoints/last.ckpt')
     ckpt = str(ckpt) if ckpt.exists() else None
     return ckpt #, resume if ckpt else None
 
 def version(backbone:str, project:str, root: str):
-    tpath, idx = Path(root, project, f'{backbone}-1v'), 1    
+    tpath, idx = Path(root, project, f'{backbone}-1v'), 1
     while tpath.exists():
         idx = idx+2
         tpath = tpath.with_name(f'{backbone}-{idx}v')
@@ -36,17 +36,19 @@ def main(
     batch_size: int = 8,
     backbone: str = 'resnet18',
     max_epochs: int = 5,
-    resume: Union[str,bool] = None,
+    resume: str = None,
     project: str = 'cat12',
     root: str = 'outputs',
+    use_aug: bool = True,
+    sanity: int = 0,
 ) -> None:
-    accu = 32//batch_size if 32>batch_size else 1
+    accu = 64//batch_size if 32>batch_size else 1
     ver = version(backbone, project, root)
     ckpt_path = resume_ckpt(resume, project, root)
 
     checkpoint = ModelCheckpoint(
         save_last = True,
-        filename = 'epoch-{epoch}-acc-{valid/acc:.3f}-{step}',        
+        filename = 'epoch-{epoch}-acc-{valid/acc:.3f}-{step}',
         monitor = 'valid/acc',
         mode = 'max',  # min
         auto_insert_metric_name = False,
@@ -58,13 +60,12 @@ def main(
         checkpoint,
     ]
     data_dir = 'datasets/cats12/data_sets/cat_12'
-    train_dl = train_dataloader(data_dir, 'train.txt', batch_size = batch_size)
+    train_dl = train_dataloader(data_dir, 'train.txt', batch_size = batch_size, use_aug = use_aug)
     valid_dl = valid_dataloader(data_dir, 'valid.txt', batch_size = batch_size)
 
     model = LitClasModule(12, backbone_name = backbone)
-    trainer = Trainer(
-        # limit_train_batches = 100,
-        num_sanity_val_steps = 0,
+    trainer = Trainer(        
+        num_sanity_val_steps = sanity,
         default_root_dir=root,
         accumulate_grad_batches=accu,
         logger = WandbLogger(version=ver, project=project),

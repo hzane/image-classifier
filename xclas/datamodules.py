@@ -1,5 +1,7 @@
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.transforms.functional import resize, normalize
+# from torchvision.transforms import autoaugment as aug, Compose as compose
+from torchvision import transforms as transes
 from torchvision.io import read_image, ImageReadMode as IRM
 
 from typing import Optional, Any, Tuple, List, Union
@@ -40,12 +42,23 @@ class FileDataset(Dataset):
         fpath, target = self.dataset[idx]
         return fpath, target
 
+    def weights(self)->list[float]:
+        targets = [x[1] for x in self.dataset]
+        _, idxes, counts = torch.unique(
+            torch.tensor(targets),
+            return_counts = True,
+            return_inverse = True
+        )
+        weights = len(targets) / counts[idxes]
+        return weights
+
 
 class ImageDataset(Dataset):
     def __init__(
         self,
         dataset: FileDataset,
         img_size: tuple = None,
+        use_aug: bool = False,
     ):
         if img_size is None:
             img_size = (224, 224)
@@ -53,16 +66,26 @@ class ImageDataset(Dataset):
 
         self.dataset = dataset
         self.img_size = img_size
+        self.trans = transes.Compose([   ])
+        if use_aug:
+            self.trans = transes.Compose([
+                transes.autoaugment.TrivialAugmentWide(),
+                transes.autoaugment.AugMix(),
+                transes.RandomHorizontalFlip(0.5),
+                transes.RandomResizedCrop(
+                    size = img_size, scale = (0.8, 1.)
+                ),
+            ])
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index) -> Tuple[torch.tensor, int]:
         '''[ch, H, W], target:int'''
-        # fpath, target = super().dataset[index]
         fpath, target = self.dataset[index]
 
         img = read_image(fpath, IRM.RGB)  # [RGB, H, W]
+        img = self.trans(img)
         x = resize(img, self.img_size).float() / 255.
         x = normalize(x, _mean, _std)
         return x, target
@@ -73,14 +96,15 @@ def train_dataloader(
     fileset,
     batch_size: int = 32,
     num_workers: int = 4,
-    img_size: List[int] = None
+    img_size: List[int] = None,
+    use_aug: bool = True
 ) -> DataLoader:
     fileset = FileDataset(fileset, data_dir)
-    dataset = ImageDataset(fileset, img_size)
+    dataset = ImageDataset(fileset, img_size, use_aug=use_aug)
     ret = DataLoader(
         dataset,
         batch_size,
-        shuffle = True,
+        sampler = WeightedRandomSampler(fileset.weights(), len(fileset)),
         num_workers = num_workers,
         pin_memory = True
     )
