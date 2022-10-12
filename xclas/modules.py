@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import timm
 from pytorch_lightning import LightningModule
-from torchmetrics import Accuracy
+from torchmetrics import Accuracy,Precision,Recall
 
 from typing import Any
 
@@ -21,6 +21,8 @@ class LitClasModule(LightningModule):
         self.criterion = self.configure_criterion()
         self.model = self.configure_model(backbone_name, num_classes)
         self.accuracy = Accuracy(num_classes = num_classes)
+        self.prec = Precision(num_classes = num_classes, average = 'macro')
+        self.recall = Recall(num_classes = num_classes, average='macro')
 
     def configure_optimizers(self):
         hp = self.hparams
@@ -85,15 +87,33 @@ class LitClasModule(LightningModule):
         self.recall.update(yhat, y)
 
         loss = self.criterion(yhat, y)
-        self.log_dict(
-            {
-                'valid/acc': self.accuracy,
-                'valid/loss': loss
-            },
+        self.log(
+            'valid/acc',
+            self.accuracy,
             on_step = False,
             on_epoch = True,
             prog_bar = True,
         )
-        return loss
+        self.log(
+            'valid/prec',
+            self.prec,
+            on_step = False,
+            on_epoch = True,
+            prog_bar = True
+        )
+        self.log(
+            'valid/recall',
+            self.recall,
+            on_step = False,
+            on_epoch = True,
+            prog_bar = True
+        )
+        self.log(
+            'valid/loss',
+            loss,
+            on_step = False,
+            on_epoch = True,
+            prog_bar = True
+        )
 
- 
+        return loss
