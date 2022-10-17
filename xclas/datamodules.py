@@ -1,6 +1,5 @@
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.transforms.functional import resize, normalize
-# from torchvision.transforms import autoaugment as aug, Compose as compose
 from torchvision import transforms as transes
 from torchvision.io import read_image, ImageReadMode as IRM
 
@@ -12,15 +11,12 @@ _mean = [0.485, 0.456, 0.406]
 _std = [0.229, 0.224, 0.225]
 
 
-def line_split(line: str, root: str) -> Tuple[str, int]:
-    root = root or ''
-    x = line.split('\t')
-    return str(Path(root, x[0])), int(x[1])
-
 
 class FileDataset(Dataset):
-    def __init__(self, file_or_dir: str, root: str = None):
+    def __init__(self, file_or_dir: str, root: str = None, target_is_int:bool = True):
         super().__init__()
+        self.root = root
+        self.target_is_int = target_is_int
 
         if root is None:  # image file or folder
             file_or_dir = Path(file_or_dir)
@@ -33,23 +29,31 @@ class FileDataset(Dataset):
                 ]
         else:
             lines = Path(root, file_or_dir).read_text().splitlines()
-            self.dataset = [line_split(line, root) for line in lines]
+            a, b = zip(*[self.line_split(line) for line in lines])
+            self.files, self.targets = list(a), list(b)            
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.targets)
 
     def __getitem__(self, idx) -> Tuple[str, int]:
-        fpath, target = self.dataset[idx]
-        return fpath, target
+        fpath, target = self.files[idx], self.targets[idx]
+        return str(Path(self.root, fpath)), target
+    
+    def line_split(self,line: str) -> Tuple[str, int]:
+        x = line.split('\t')
+        target = torch.tensor([int(i) if self.target_is_int else float(i) for i in x[1:]])
+        if len(target) == 1:
+            target = target[0]
+        return x[0], target
 
     def weights(self)->list[float]:
-        targets = [x[1] for x in self.dataset]
+        # targets = [x[1] for x in self.dataset]
         _, idxes, counts = torch.unique(
-            torch.tensor(targets),
+            torch.tensor(self.targets),
             return_counts = True,
             return_inverse = True
         )
-        weights = len(targets) / counts[idxes]
+        weights = len(self.targets) / counts[idxes]
         return weights
 
 
@@ -66,11 +70,13 @@ class ImageDataset(Dataset):
 
         self.dataset = dataset
         self.img_size = img_size
-        self.trans = transes.Compose([   ])
+        self.trans = transes.Compose([  
+            transes.Resize(size=img_size)
+         ])
         if use_aug:
             self.trans = transes.Compose([
                 transes.autoaugment.TrivialAugmentWide(),
-                transes.autoaugment.AugMix(),
+                # transes.autoaugment.AugMix(),
                 transes.RandomHorizontalFlip(0.5),
                 transes.RandomResizedCrop(
                     size = img_size, scale = (0.8, 1.)
@@ -80,13 +86,13 @@ class ImageDataset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def __getitem__(self, index) -> Tuple[torch.tensor, int]:
+    def __getitem__(self, index) -> Tuple[torch.tensor, any]:
         '''[ch, H, W], target:int'''
         fpath, target = self.dataset[index]
 
         img = read_image(fpath, IRM.RGB)  # [RGB, H, W]
         img = self.trans(img)
-        x = resize(img, self.img_size).float() / 255.
+        x = img / 255.
         x = normalize(x, _mean, _std)
         return x, target
 
@@ -100,7 +106,7 @@ def train_dataloader(
     use_aug: bool = True
 ) -> DataLoader:
     fileset = FileDataset(fileset, data_dir)
-    dataset = ImageDataset(fileset, img_size, use_aug=use_aug)
+    dataset = ImageDataset(fileset, img_size, use_aug = use_aug)
     ret = DataLoader(
         dataset,
         batch_size,
