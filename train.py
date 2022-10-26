@@ -52,12 +52,13 @@ def main(
     img_size: List[int] = None,
     batch_size: int = 8,
     backbone: str = 'resnet18',
+    lr:float = 0.0005,
     max_epochs: int = 5,
     resume: str = None,
     pretrain: str = None,
     root: str = 'outputs',
     use_aug: bool = True,
-    sanity: int = 2,
+    sanity: int = 0,
 ) -> None:
     accu = 64//batch_size if 32>batch_size else 1
     ver = version(backbone, project, root)
@@ -91,7 +92,7 @@ def main(
         data_dir, valid, batch_size = batch_size, img_size = img_size
     )
 
-    model = LitClasModule(num_classes, backbone_name = backbone)
+    model = LitClasModule(num_classes, backbone_name = backbone, lr = lr)
     if pretrain:
         model.load_state_dict(pretrain)
 

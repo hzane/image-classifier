@@ -1,8 +1,0 @@
-#!/usr/bin/env zsh
-
-python train.py \
-    --project 'antiporn-resite' \
-    --num_classes 12 \
-    --data_dir datasets/hanren \
-    --train antiporn-resite-mini-train.tsv \
-    --valid antiporn-resite-mini-valid.tsv 

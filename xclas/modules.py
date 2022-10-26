@@ -12,7 +12,7 @@ class LitClasModule(LightningModule):
         self,
         num_classes: int,
         backbone_name: str = 'resnet18',
-        lr: float = 1.e-3,
+        lr: float = 5.e-4,
         scheduler_patience: int = 5,
         lr_reduce_factor: float = 0.33,
     ):

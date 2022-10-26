@@ -75,6 +75,7 @@ class ImageDataset(Dataset):
          ])
         if use_aug:
             self.trans = transes.Compose([
+                transes.Resize(size=640),
                 transes.autoaugment.TrivialAugmentWide(),
                 # transes.autoaugment.AugMix(),
                 transes.RandomHorizontalFlip(0.5),
@@ -101,7 +102,7 @@ def train_dataloader(
     data_dir,
     fileset,
     batch_size: int = 32,
-    num_workers: int = 4,
+    num_workers: int = 8,
     img_size: List[int] = None,
     use_aug: bool = True
 ) -> DataLoader:
@@ -121,7 +122,7 @@ def valid_dataloader(
     data_dir,
     fileset,
     batch_size: int = 64,
-    num_workers: int = 4,
+    num_workers: int = 8,
     img_size: List[int] = None
 ) -> DataLoader:
     fileset = FileDataset(fileset, data_dir)
